@@ -55,8 +55,8 @@ function runInIframe(tokMiB,strSize,sprayK){
         w.setTimeout(()=>{
             log(`→ Heap‑spray interno: ${sprayK*1000} cadenas de ${strSize} B…`);
             w.spray=[];                       // spray dentro del iframe
-            const base=mkStr(strSize-12);
-            for(let i=0;i<sprayK*1000;i++) w.spray.push(base+i);
+            const base=mkStr(strSize);
+            for(let i=0;i<sprayK*1000;i++) w.spray.push(base);
 
             // 3. Enviamos resultados al parent
             w.setTimeout(()=>analyzeSpray(w.spray,strSize),50);
